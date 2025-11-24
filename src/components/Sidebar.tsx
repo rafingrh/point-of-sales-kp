@@ -148,6 +148,8 @@ export default function Sidebar() {
       breakpoint="lg"
       collapsedWidth={80}
       width={260}
+      trigger={null} // kita pakai tombol custom
+      onBreakpoint={(broken) => setCollapsed(broken)} // otomatis collapse saat screen kecil
       style={{
         height: "100vh",
         position: "sticky",
@@ -167,48 +169,26 @@ export default function Sidebar() {
           borderBottom: "1px solid #f0f0f0",
         }}
       >
+        <div
+          style={{
+            width: "36px",
+            height: "36px",
+            borderRadius: "8px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: "bold",
+            fontSize: "14px",
+            color: "#fff",
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          }}
+        >
+          POS
+        </div>
         {!collapsed && (
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div
-              style={{
-                width: "36px",
-                height: "36px",
-                borderRadius: "8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: "bold",
-                fontSize: "14px",
-                color: "#fff",
-                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              }}
-            >
-              POS
-            </div>
-            <Text
-              style={{ fontSize: "16px", fontWeight: "600", color: "#1f2937" }}
-            >
-              Sistem POS
-            </Text>
-          </div>
-        )}
-        {collapsed && (
-          <div
-            style={{
-              width: "36px",
-              height: "36px",
-              borderRadius: "8px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: "bold",
-              fontSize: "14px",
-              color: "#fff",
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            }}
-          >
-            POS
-          </div>
+          <Text style={{ fontSize: "16px", fontWeight: "600", color: "#1f2937" }}>
+            Sistem POS
+          </Text>
         )}
       </div>
 
@@ -244,13 +224,7 @@ export default function Sidebar() {
               >
                 {user.name || "User"}
               </Text>
-              <Text
-                style={{
-                  display: "block",
-                  fontSize: "12px",
-                  color: "#6b7280",
-                }}
-              >
+              <Text style={{ display: "block", fontSize: "12px", color: "#6b7280" }}>
                 {roleDisplayMap[userRole] || "Staff"}
               </Text>
             </div>
@@ -258,43 +232,15 @@ export default function Sidebar() {
         </div>
       )}
 
-      {collapsed && (
-        <div
-          style={{
-            padding: "16px 0",
-            display: "flex",
-            justifyContent: "center",
-          }}
-        >
-          <Avatar
-            size={44}
-            icon={<UserOutlined />}
-            style={{
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            }}
-          />
-        </div>
-      )}
-
       <Divider style={{ margin: 0, borderColor: "#f0f0f0" }} />
 
       {/* Menu */}
-      <div
-        style={{
-          height: `calc(100% - ${collapsed ? 152 : 188}px)`,
-          overflowY: "auto",
-          background: "#fff",
-        }}
-      >
+      <div style={{ height: `calc(100% - ${collapsed ? 152 : 188}px)`, overflowY: "auto" }}>
         <Menu
           mode="inline"
           selectedKeys={[location.pathname.split("/")[1]]}
           items={filteredMenu(menuItems, userRole)}
-          style={{
-            borderRight: 0,
-            paddingTop: "8px",
-            background: "#fff",
-          }}
+          style={{ borderRight: 0 }}
         />
       </div>
 
@@ -313,12 +259,7 @@ export default function Sidebar() {
         <Button
           type="text"
           onClick={toggleCollapsed}
-          style={{
-            width: "100%",
-            height: "100%",
-            color: "#667eea",
-            fontWeight: "500",
-          }}
+          style={{ width: "100%", height: "100%", color: "#667eea", fontWeight: "500" }}
           icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
         >
           {!collapsed && "Collapse"}
