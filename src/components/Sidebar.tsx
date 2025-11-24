@@ -113,7 +113,7 @@ export default function Sidebar() {
         {
           key: "sales",
           icon: <FileOutlined />,
-          label: <Link to="/sales">Riwayat Penjualan</Link>,
+          label: <Link to="/sales">Transaksi</Link>,
           roles: ["owner", "admin"],
         },
       ],
@@ -130,7 +130,7 @@ export default function Sidebar() {
   const filteredMenu = (
     items: CustomMenuItem[],
     role: string
-  ): MenuProps['items'] =>
+  ): MenuProps["items"] =>
     items
       .filter((item) => item.roles.includes(role))
       .map((item) => ({
