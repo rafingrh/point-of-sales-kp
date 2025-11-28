@@ -5,14 +5,14 @@ import {
   DashboardOutlined,
   UserOutlined,
   TeamOutlined,
-  FileOutlined,
+  FileTextOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  ShoppingCartOutlined,
   AppstoreOutlined,
   TagOutlined,
   CreditCardOutlined,
   ShoppingOutlined,
+  HistoryOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import type { ReactNode } from "react";
@@ -35,14 +35,12 @@ export default function Sidebar() {
     1: "owner",
     2: "admin",
     3: "kasir",
-    4: "staff",
   };
 
   const roleDisplayMap: Record<string, string> = {
     owner: "Owner",
     admin: "Admin",
     kasir: "Kasir",
-    staff: "Staff",
   };
 
   const userRole = roleMap[user.role_id];
@@ -56,7 +54,7 @@ export default function Sidebar() {
       key: "dashboard",
       icon: <DashboardOutlined />,
       label: <Link to="/dashboard">Dashboard</Link>,
-      roles: ["owner", "admin", "kasir", "staff"],
+      roles: ["owner", "admin"],
     },
     {
       key: "auth",
@@ -108,25 +106,25 @@ export default function Sidebar() {
       key: "sales-management",
       icon: <ShoppingOutlined />,
       label: "Transaksi",
-      roles: ["owner", "admin"],
+      roles: ["owner", "admin", "kasir"],
       children: [
         {
           key: "sales",
-          icon: <FileOutlined />,
+          icon: <FileTextOutlined />,
           label: <Link to="/sales">Transaksi</Link>,
-          roles: ["owner", "admin"],
+          roles: ["owner", "admin", "kasir"],
+        },
+        {
+          key: "sales-history",
+          icon: <HistoryOutlined />,
+          label: <Link to="/history">Riwayat Transaksi</Link>,
+          roles: ["owner", "admin", "kasir"],
         },
       ],
     },
-    {
-      key: "sales-pos",
-      icon: <ShoppingCartOutlined />,
-      label: <Link to="/sales">Kasir (POS)</Link>,
-      roles: ["kasir", "staff"],
-    },
   ];
 
-  // filter menu dan convert ke tipe MenuProps['items']
+  // Filter menu dan convert ke tipe MenuProps['items']
   const filteredMenu = (
     items: CustomMenuItem[],
     role: string
@@ -148,8 +146,8 @@ export default function Sidebar() {
       breakpoint="lg"
       collapsedWidth={80}
       width={260}
-      trigger={null} // kita pakai tombol custom
-      onBreakpoint={(broken) => setCollapsed(broken)} // otomatis collapse saat screen kecil
+      trigger={null}
+      onBreakpoint={(broken) => setCollapsed(broken)}
       style={{
         height: "100vh",
         position: "sticky",
@@ -186,8 +184,10 @@ export default function Sidebar() {
           POS
         </div>
         {!collapsed && (
-          <Text style={{ fontSize: "16px", fontWeight: "600", color: "#1f2937" }}>
-            Sistem POS
+          <Text
+            style={{ fontSize: "16px", fontWeight: "600", color: "#1f2937" }}
+          >
+            POS System
           </Text>
         )}
       </div>
@@ -224,7 +224,9 @@ export default function Sidebar() {
               >
                 {user.name || "User"}
               </Text>
-              <Text style={{ display: "block", fontSize: "12px", color: "#6b7280" }}>
+              <Text
+                style={{ display: "block", fontSize: "12px", color: "#6b7280" }}
+              >
                 {roleDisplayMap[userRole] || "Staff"}
               </Text>
             </div>
@@ -234,8 +236,58 @@ export default function Sidebar() {
 
       <Divider style={{ margin: 0, borderColor: "#f0f0f0" }} />
 
-      {/* Menu */}
-      <div style={{ height: `calc(100% - ${collapsed ? 152 : 188}px)`, overflowY: "auto" }}>
+      {/* Menu with Custom Styles */}
+      <style>{`
+        .ant-menu-inline .ant-menu-item,
+        .ant-menu-inline .ant-menu-submenu-title {
+          transition: all 0.3s ease;
+        }
+        
+        .ant-menu-inline .ant-menu-item:hover,
+        .ant-menu-inline .ant-menu-submenu-title:hover {
+          background: linear-gradient(90deg, rgba(102, 126, 234, 0.08) 0%, rgba(102, 126, 234, 0.04) 100%) !important;
+          color: #667eea !important;
+        }
+        
+        .ant-menu-inline .ant-menu-item:hover .ant-menu-item-icon,
+        .ant-menu-inline .ant-menu-submenu-title:hover .ant-menu-submenu-arrow {
+          color: #667eea !important;
+        }
+        
+        .ant-menu-inline .ant-menu-item-selected {
+          background: linear-gradient(90deg, rgba(102, 126, 234, 0.12) 0%, rgba(102, 126, 234, 0.06) 100%) !important;
+          color: #667eea !important;
+          font-weight: 600;
+        }
+        
+        .ant-menu-inline .ant-menu-item-selected::after {
+          border-right-color: #667eea !important;
+          border-right-width: 3px;
+        }
+        
+        .ant-menu-inline .ant-menu-item-selected .ant-menu-item-icon {
+          color: #667eea !important;
+        }
+        
+        .ant-menu-inline .ant-menu-item a {
+          color: inherit;
+        }
+        
+        .ant-menu-sub.ant-menu-inline {
+          background: #f9fafb !important;
+        }
+        
+        .ant-menu-sub .ant-menu-item:hover {
+          background: linear-gradient(90deg, rgba(102, 126, 234, 0.06) 0%, rgba(102, 126, 234, 0.03) 100%) !important;
+        }
+      `}</style>
+
+      <div
+        style={{
+          height: `calc(100% - ${collapsed ? 152 : 188}px)`,
+          overflowY: "auto",
+        }}
+      >
         <Menu
           mode="inline"
           selectedKeys={[location.pathname.split("/")[1]]}
@@ -259,7 +311,12 @@ export default function Sidebar() {
         <Button
           type="text"
           onClick={toggleCollapsed}
-          style={{ width: "100%", height: "100%", color: "#667eea", fontWeight: "500" }}
+          style={{
+            width: "100%",
+            height: "100%",
+            color: "#667eea",
+            fontWeight: "500",
+          }}
           icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
         >
           {!collapsed && "Collapse"}

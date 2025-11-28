@@ -13,22 +13,50 @@ export default function Login() {
 
   const onFinish = async (values: { email: string; password: string }) => {
     setLoading(true);
-    const { data, error } = await supabase.rpc("login_user", {
-      p_email: values.email,
-      p_password: values.password,
-    });
-    setLoading(false);
 
-    if (error || data.length === 0) {
-      message.error("Email atau password salah!");
-      return;
+    try {
+      // 1. Login menggunakan fungsi RPC yang sudah ada
+      const { data: userData, error: rpcError } = await supabase.rpc(
+        "login_user",
+        {
+          p_email: values.email,
+          p_password: values.password,
+        }
+      );
+
+      if (rpcError || !userData || userData.length === 0) {
+        message.error("Email atau password salah!");
+        setLoading(false);
+        return;
+      }
+
+      const user = userData[0];
+      console.log("USER:", user);
+
+      // 2. Simpan user data ke localStorage (untuk backward compatibility)
+      localStorage.setItem("user", JSON.stringify(user));
+
+      // 3. PENTING: Sign in ke Supabase Auth juga
+      // Ini membuat supabase.auth.getUser() bisa berfungsi
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: values.email,
+        password: values.password,
+      });
+
+      if (signInError) {
+        console.error("Supabase Auth Error:", signInError);
+        // Tetap lanjut karena login RPC sudah berhasil
+        // Auth sign in hanya untuk compatibility dengan sistem lain
+      }
+
+      message.success("Login berhasil!");
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      console.error("Login error:", error);
+      message.error("Terjadi kesalahan saat login");
+    } finally {
+      setLoading(false);
     }
-
-    const user = data[0];
-    console.log("USER:", user);
-    localStorage.setItem("user", JSON.stringify(user));
-    message.success("Login berhasil!");
-    navigate("/dashboard", { replace: true });
   };
 
   return (

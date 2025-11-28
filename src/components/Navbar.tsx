@@ -5,7 +5,7 @@ const { Text } = Typography;
 
 export default function Navbar() {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
-  
+
   const roleMap: Record<number, string> = {
     1: "owner",
     2: "admin",
@@ -64,7 +64,7 @@ export default function Navbar() {
             letterSpacing: "0.5px",
           }}
         >
-          Aplikasi POS
+          POS
         </Text>
       </div>
 

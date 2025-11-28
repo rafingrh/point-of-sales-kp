@@ -13,6 +13,9 @@ import {
   Spin,
   Badge,
   Input,
+  Modal,
+  Radio,
+  Space,
 } from "antd";
 import { supabase } from "../lib/supabase";
 import {
@@ -21,6 +24,10 @@ import {
   PlusOutlined,
   MinusOutlined,
   SearchOutlined,
+  CreditCardOutlined,
+  CheckCircleOutlined,
+  CloseOutlined,
+  PrinterOutlined,
 } from "@ant-design/icons";
 
 interface Product {
@@ -52,10 +59,61 @@ export default function RestaurantPOS() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [lastTransaction, setLastTransaction] = useState<{
+    items: CartItem[];
+    total: number;
+    paymentMethod: string;
+    date: string;
+    transactionId: string;
+  } | null>(null);
+  const [processingPayment, setProcessingPayment] = useState(false);
+  const [userId, setUserId] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+
+      // Get user ID - Try from Supabase Auth first, then localStorage
+      let currentUserId: number | null = null;
+
+      // Method 1: Try Supabase Auth
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data: userData } = await supabase
+          .from("users")
+          .select("id")
+          .eq("email", user.email)
+          .single();
+
+        if (userData) {
+          currentUserId = userData.id;
+        }
+      }
+
+      // Method 2: Fallback to localStorage
+      if (!currentUserId) {
+        const storedUser = localStorage.getItem("user");
+        if (storedUser) {
+          try {
+            const parsedUser = JSON.parse(storedUser);
+            currentUserId = parsedUser.id || parsedUser.user_id;
+          } catch (e) {
+            console.error("Error parsing user from localStorage:", e);
+          }
+        }
+      }
+
+      setUserId(currentUserId);
+
+      if (!currentUserId) {
+        message.warning("User tidak terautentikasi. Silakan login kembali.");
+      }
 
       // Fetch products
       const { data: productsData, error: productsError } = await supabase
@@ -120,11 +178,130 @@ export default function RestaurantPOS() {
     0
   );
 
-  const handleCheckout = () => {
-    if (!paymentMethod) return message.warning("Pilih metode pembayaran");
-    if (cart.length === 0) return message.warning("Pesanan kosong");
-    message.success("Pesanan berhasil dibuat!");
+  const handleSelectPayment = () => {
+    if (cart.length === 0) return message.warning("Keranjang masih kosong");
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentMethodSelect = (methodId: number) => {
+    setPaymentMethod(methodId);
+    setShowPaymentModal(false);
+    setShowSummaryModal(true);
+  };
+
+  const handleConfirmPayment = async () => {
+    if (!userId) {
+      message.error("User tidak terautentikasi");
+      return;
+    }
+
+    if (!paymentMethod) {
+      message.error("Metode pembayaran tidak valid");
+      return;
+    }
+
+    setProcessingPayment(true);
+
+    try {
+      // 1. Insert transaction
+      const { data: transactionData, error: transactionError } = await supabase
+        .from("transactions")
+        .insert({
+          user_id: userId,
+          payment_method_id: paymentMethod,
+          total_amount: totalAmount,
+          paid_amount: totalAmount, // Untuk saat ini assume paid sama dengan total
+          change_amount: 0, // Bisa diupdate nanti jika ada fitur kembalian
+        })
+        .select()
+        .single();
+
+      if (transactionError) throw transactionError;
+
+      // 2. Insert transaction items
+      const transactionItems = cart.map((item) => ({
+        transaction_id: transactionData.id,
+        product_id: item.id,
+        qty: item.quantity,
+        price: item.price,
+        subtotal: item.price * item.quantity,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from("transaction_items")
+        .insert(transactionItems);
+
+      if (itemsError) throw itemsError;
+
+      // 3. Update stock products dan create stock logs
+      for (const item of cart) {
+        // Update stock
+        const { error: stockError } = await supabase
+          .from("products")
+          .update({ stock: item.stock - item.quantity })
+          .eq("id", item.id);
+
+        if (stockError) throw stockError;
+
+        // Create stock log
+        const { error: logError } = await supabase.from("stock_logs").insert({
+          product_id: item.id,
+          qty_change: -item.quantity,
+          reason: `Penjualan - Transaction #${transactionData.id}`,
+        });
+
+        if (logError) throw logError;
+      }
+
+      // 4. Refresh products data
+      const { data: updatedProducts } = await supabase
+        .from("products")
+        .select("*");
+      if (updatedProducts) setProducts(updatedProducts as Product[]);
+
+      // Generate transaction details for receipt
+      const transactionDate = new Date(
+        transactionData.created_at
+      ).toLocaleString("id-ID", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      // Save transaction data for receipt
+      setLastTransaction({
+        items: [...cart],
+        total: totalAmount,
+        paymentMethod: selectedPaymentMethodName || "",
+        date: transactionDate,
+        transactionId: `TRX${transactionData.id.toString().padStart(8, "0")}`,
+      });
+
+      message.success("Transaksi berhasil diproses!");
+      setShowSummaryModal(false);
+      setShowReceiptModal(true);
+    } catch (error) {
+      console.error("Error processing transaction:", error);
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
+  const handleCloseReceipt = () => {
+    setShowReceiptModal(false);
     setCart([]);
+    setPaymentMethod(null);
+    setLastTransaction(null);
+  };
+
+  const handlePrintReceipt = () => {
+    window.print();
+  };
+
+  const handleCancelSummary = () => {
+    setShowSummaryModal(false);
     setPaymentMethod(null);
   };
 
@@ -137,6 +314,10 @@ export default function RestaurantPOS() {
       selectedCategory === null || product.category_id === selectedCategory;
     return matchesSearch && matchesCategory;
   });
+
+  const selectedPaymentMethodName = paymentMethods.find(
+    (m) => m.id === paymentMethod
+  )?.name;
 
   return (
     <div
@@ -488,26 +669,12 @@ export default function RestaurantPOS() {
                     </div>
                   </div>
 
-                  <Select
-                    placeholder="Pilih metode pembayaran"
-                    value={paymentMethod || undefined}
-                    onChange={(val) => setPaymentMethod(val)}
-                    style={{ width: "100%", marginBottom: "12px" }}
-                    size="large"
-                  >
-                    {paymentMethods.map((m) => (
-                      <Select.Option key={m.id} value={m.id}>
-                        {m.name}
-                      </Select.Option>
-                    ))}
-                  </Select>
-
                   <Button
                     type="primary"
                     block
                     size="large"
-                    disabled={cart.length === 0 || !paymentMethod}
-                    onClick={handleCheckout}
+                    disabled={cart.length === 0}
+                    onClick={handleSelectPayment}
                     style={{
                       height: "48px",
                       borderRadius: "8px",
@@ -517,9 +684,9 @@ export default function RestaurantPOS() {
                         "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                       borderColor: "#667eea",
                     }}
-                    icon={<ShoppingCartOutlined />}
+                    icon={<CreditCardOutlined />}
                   >
-                    Proses Transaksi
+                    Pilih Metode Pembayaran
                   </Button>
 
                   <Button
@@ -543,6 +710,468 @@ export default function RestaurantPOS() {
           </Col>
         </Row>
       </div>
+
+      {/* Payment Method Selection Modal */}
+      <Modal
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <CreditCardOutlined
+              style={{ color: "#667eea", fontSize: "20px" }}
+            />
+            <span>Pilih Metode Pembayaran</span>
+          </div>
+        }
+        open={showPaymentModal}
+        onCancel={() => setShowPaymentModal(false)}
+        footer={null}
+        width={500}
+        centered
+      >
+        <div style={{ marginTop: "24px" }}>
+          <Radio.Group
+            style={{ width: "100%" }}
+            value={null}
+            onChange={(e) => handlePaymentMethodSelect(e.target.value)}
+          >
+            <Space direction="vertical" style={{ width: "100%" }} size={12}>
+              {paymentMethods.map((method) => (
+                <Card
+                  key={method.id}
+                  hoverable
+                  style={{
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    border: "2px solid #e0e7ff",
+                    transition: "all 0.3s ease",
+                  }}
+                  bodyStyle={{ padding: "16px" }}
+                  onClick={() => handlePaymentMethodSelect(method.id)}
+                >
+                  <Radio value={method.id} style={{ width: "100%" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        width: "100%",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: "16px",
+                            fontWeight: "600",
+                            color: "#000",
+                          }}
+                        >
+                          {method.name}
+                        </div>
+                      </div>
+                      <CreditCardOutlined
+                        style={{ fontSize: "24px", color: "#667eea" }}
+                      />
+                    </div>
+                  </Radio>
+                </Card>
+              ))}
+            </Space>
+          </Radio.Group>
+        </div>
+      </Modal>
+
+      {/* Order Summary Modal */}
+      <Modal
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <ShoppingCartOutlined
+              style={{ color: "#667eea", fontSize: "20px" }}
+            />
+            <span>Ringkasan Pesanan</span>
+          </div>
+        }
+        open={showSummaryModal}
+        onCancel={handleCancelSummary}
+        footer={null}
+        width={600}
+        centered
+      >
+        <div style={{ marginTop: "24px" }}>
+          {/* Payment Method Info */}
+          <Card
+            style={{
+              background: "linear-gradient(135deg, #f8f9ff 0%, #e0e7ff 100%)",
+              border: "2px solid #667eea",
+              borderRadius: "8px",
+              marginBottom: "20px",
+            }}
+            bodyStyle={{ padding: "16px" }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: "12px",
+                    color: "#666",
+                    marginBottom: "4px",
+                  }}
+                >
+                  Metode Pembayaran
+                </div>
+                <div
+                  style={{
+                    fontSize: "16px",
+                    fontWeight: "bold",
+                    color: "#667eea",
+                  }}
+                >
+                  {selectedPaymentMethodName}
+                </div>
+              </div>
+              <CreditCardOutlined
+                style={{ fontSize: "32px", color: "#667eea" }}
+              />
+            </div>
+          </Card>
+
+          {/* Order Items */}
+          <div style={{ marginBottom: "20px" }}>
+            <div
+              style={{
+                fontSize: "14px",
+                fontWeight: "600",
+                marginBottom: "12px",
+                color: "#000",
+              }}
+            >
+              Detail Pesanan
+            </div>
+            {cart.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "12px",
+                  padding: "12px",
+                  background: "#f8f9ff",
+                  borderRadius: "6px",
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: "600", fontSize: "14px" }}>
+                    {item.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "#666",
+                      marginTop: "4px",
+                    }}
+                  >
+                    Rp {item.price.toLocaleString()} x {item.quantity}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontWeight: "bold",
+                    color: "#667eea",
+                    fontSize: "14px",
+                  }}
+                >
+                  Rp {(item.price * item.quantity).toLocaleString()}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Total */}
+          <Card
+            style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              border: "none",
+              borderRadius: "8px",
+              marginBottom: "20px",
+            }}
+            bodyStyle={{ padding: "16px" }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: "12px", color: "#fff", opacity: 0.9 }}>
+                  Total Pembayaran
+                </div>
+                <div
+                  style={{
+                    fontSize: "24px",
+                    fontWeight: "bold",
+                    color: "#fff",
+                  }}
+                >
+                  Rp {totalAmount.toLocaleString()}
+                </div>
+              </div>
+              <div style={{ textAlign: "right", color: "#fff" }}>
+                <div style={{ fontSize: "12px", opacity: 0.9 }}>
+                  {cart.length} Item
+                </div>
+                <div style={{ fontSize: "12px", opacity: 0.9 }}>
+                  {cart.reduce((sum, item) => sum + item.quantity, 0)} Qty
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Action Buttons */}
+          <div style={{ display: "flex", gap: "12px" }}>
+            <Button
+              size="large"
+              block
+              onClick={handleCancelSummary}
+              disabled={processingPayment}
+              style={{
+                height: "48px",
+                borderRadius: "8px",
+                fontSize: "15px",
+                fontWeight: "600",
+              }}
+              icon={<CloseOutlined />}
+            >
+              Batal
+            </Button>
+            <Button
+              type="primary"
+              size="large"
+              block
+              onClick={handleConfirmPayment}
+              loading={processingPayment}
+              disabled={processingPayment}
+              style={{
+                height: "48px",
+                borderRadius: "8px",
+                fontSize: "15px",
+                fontWeight: "bold",
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                borderColor: "#667eea",
+              }}
+              icon={!processingPayment && <CheckCircleOutlined />}
+            >
+              {processingPayment ? "Memproses..." : "Konfirmasi Pembayaran"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Receipt Modal */}
+      <Modal
+        title={null}
+        open={showReceiptModal}
+        onCancel={handleCloseReceipt}
+        footer={null}
+        width={400}
+        centered
+        closeIcon={null}
+      >
+        <div id="receipt-content">
+          {/* Receipt Header */}
+          <div style={{ textAlign: "center", marginBottom: "24px" }}>
+            <div
+              style={{
+                fontSize: "24px",
+                fontWeight: "bold",
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                marginBottom: "8px",
+              }}
+            >
+              RESTAURANT POS
+            </div>
+            <div style={{ fontSize: "12px", color: "#666" }}>
+              Jl. Contoh No. 123, Jakarta
+            </div>
+            <div style={{ fontSize: "12px", color: "#666" }}>
+              Telp: (021) 1234-5678
+            </div>
+            <Divider style={{ margin: "16px 0" }} />
+          </div>
+
+          {/* Transaction Info */}
+          {lastTransaction && (
+            <>
+              <div style={{ marginBottom: "16px", fontSize: "12px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <span style={{ color: "#666" }}>No. Transaksi:</span>
+                  <span style={{ fontWeight: "600" }}>
+                    {lastTransaction.transactionId}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <span style={{ color: "#666" }}>Tanggal:</span>
+                  <span style={{ fontWeight: "600" }}>
+                    {lastTransaction.date}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span style={{ color: "#666" }}>Pembayaran:</span>
+                  <span style={{ fontWeight: "600" }}>
+                    {lastTransaction.paymentMethod}
+                  </span>
+                </div>
+              </div>
+
+              <Divider style={{ margin: "16px 0" }} />
+
+              {/* Items */}
+              <div style={{ marginBottom: "16px" }}>
+                {lastTransaction.items.map((item, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      marginBottom: "12px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: "600",
+                        marginBottom: "4px",
+                      }}
+                    >
+                      {item.name}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        color: "#666",
+                        paddingLeft: "8px",
+                      }}
+                    >
+                      <span>
+                        {item.quantity} x Rp {item.price.toLocaleString()}
+                      </span>
+                      <span style={{ fontWeight: "600", color: "#000" }}>
+                        Rp {(item.price * item.quantity).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Divider style={{ margin: "16px 0", borderColor: "#000" }} />
+
+              {/* Total */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "18px",
+                  fontWeight: "bold",
+                  marginBottom: "24px",
+                }}
+              >
+                <span>TOTAL</span>
+                <span>Rp {lastTransaction.total.toLocaleString()}</span>
+              </div>
+
+              <Divider style={{ margin: "16px 0" }} />
+
+              {/* Footer */}
+              <div
+                style={{ textAlign: "center", fontSize: "12px", color: "#666" }}
+              >
+                <div style={{ marginBottom: "8px" }}>
+                  Terima kasih atas kunjungan Anda!
+                </div>
+                <div>Selamat menikmati pesanan Anda</div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Action Buttons */}
+        <div style={{ marginTop: "24px", display: "flex", gap: "12px" }}>
+          <Button
+            size="large"
+            block
+            onClick={handleCloseReceipt}
+            style={{
+              height: "48px",
+              borderRadius: "8px",
+              fontSize: "15px",
+              fontWeight: "600",
+            }}
+            icon={<CheckCircleOutlined />}
+          >
+            Selesai
+          </Button>
+          <Button
+            type="primary"
+            size="large"
+            block
+            onClick={handlePrintReceipt}
+            style={{
+              height: "48px",
+              borderRadius: "8px",
+              fontSize: "15px",
+              fontWeight: "bold",
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              borderColor: "#667eea",
+            }}
+            icon={<PrinterOutlined />}
+          >
+            Cetak Struk
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Print Styles */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #receipt-content,
+          #receipt-content * {
+            visibility: visible;
+          }
+          #receipt-content {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 20px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

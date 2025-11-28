@@ -9,6 +9,7 @@ import Categories from "./pages/Categories";
 import Products from "./pages/Products";
 import PaymentMethods from "./pages/PaymentMethods";
 import Transactions from "./pages/Transactions";
+import TransactionHistory from "./pages/TransactionHistory";
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/products" element={<Products />} />
           <Route path="/payment-methods" element={<PaymentMethods />} />
           <Route path="/sales" element={<Transactions />} />
+          <Route path="/history" element={<TransactionHistory />} />
 
           {/* Tambahkan route lain yang butuh login */}
         </Route>
